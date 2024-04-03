@@ -38,7 +38,7 @@ pluginManagement {
 
 Next, in your `build.gradle` add:
 
-![badge](https://maven.firstdarkdev.xyz/api/badge/latest/releases/dev/firstdark/keymaster?color=40c14a&name=keymaster)
+![badge](https://maven.firstdarkdev.xyz/api/badge/latest/releases/dev/firstdark/keymaster/keymaster?color=40c14a&name=keymaster)
 
 ```groovy
 plugins {
@@ -110,7 +110,7 @@ pluginManagement {
 
 Next, in your `build.gradle.kts` add:
 
-![badge](https://maven.firstdarkdev.xyz/api/badge/latest/releases/dev/firstdark/keymaster?color=40c14a&name=keymaster)
+![badge](https://maven.firstdarkdev.xyz/api/badge/latest/releases/dev/firstdark/keymaster/keymaster?color=40c14a&name=keymaster)
 
 ```kotlin
 plugins {
