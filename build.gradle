@@ -1,0 +1,90 @@
+plugins {
+    id 'java'
+    id 'idea'
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish' version '1.2.1'
+    id 'com.diffplug.spotless' version '6.13.0'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+apply plugin: 'maven-publish'
+
+group = 'dev.firstdark.keymaster'
+version = "${version_major}.${version_minor}.${version_patch}"
+description = "Gradle plugin to Sign Jars"
+archivesBaseName = 'KeyMaster'
+java.toolchain.languageVersion = JavaLanguageVersion.of(8)
+
+if (System.getenv('BUILD_NUMBER') != null) {
+    var build = (System.getenv('BUILD_NUMBER').toInteger() - 1)
+    version = "${version_major}.${version_minor}.${build}"
+}
+
+configurations {
+    shadeMe
+    implementation.extendsFrom shadeMe
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation gradleApi()
+
+    shadeMe "org.apache.commons:commons-lang3:${commons_lang}"
+
+    compileOnly "org.projectlombok:lombok:${lombok}"
+    annotationProcessor "org.projectlombok:lombok:${lombok}"
+}
+
+gradlePlugin {
+    plugins {
+        keyMasterGradlePlugin {
+            id = "dev.firstdark.keymaster"
+            description = project.description
+            displayName = "KeyMaster"
+            version = project.version
+            implementationClass = "dev.firstdark.keymaster.plugin.KeyMasterGradlePlugin"
+            tags.set(['verification', 'signing', 'gradle', 'security'])
+        }
+    }
+}
+
+shadowJar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    configurations = [project.configurations.getByName("shadeMe")]
+    archiveClassifier.set(null)
+}
+
+jar {
+    manifest {
+        attributes([
+                'Timestamp'               : System.currentTimeMillis(),
+                'Specification-Title'     : project.archivesBaseName,
+                'Specification-Version'   : project.version,
+                'Implementation-Title'    : project.archivesBaseName,
+                'Implementation-Version'  : project.version,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'Built-On-Java'           : "${System.getProperty('java.vm.version')} (${System.getProperty('java.vm.vendor')})"
+        ])
+    }
+}
+
+spotless {
+    java {
+        targetExclude("src/test/**")
+        licenseHeaderFile(rootProject.file("HEADER")).yearSeparator("-")
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            url System.getenv('MAVEN_URL')
+            credentials {
+                username System.getenv('MAVEN_USER')
+                password System.getenv('MAVEN_PASS')
+            }
+        }
+    }
+}

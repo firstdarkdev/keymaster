@@ -1,0 +1,58 @@
+import dev.firstdark.keymaster.tasks.SignJarTask
+
+plugins {
+    id 'java'
+    id "dev.firstdark.keymaster"
+}
+
+group = 'dev.firstdark.keymastertest'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+}
+
+tasks.register('createDummyJar', Jar) {
+    // Configure the JAR task to have no files
+    from {}
+    archiveFileName = 'dummy.jar' // Set the desired name for the JAR file
+}
+
+// Register a custom task to sign your jar
+tasks.register('signJar', SignJarTask) {
+    // Depend on the task used to build your project
+    dependsOn jar
+
+    // The input artifact. This can be a Task, File or File Name
+    artifactInput = jar
+
+    // Optional. Set the output name of the signed jar. This defaults to the artifactInput file name, and will overwrite it
+    outputFileName = "testsign"
+
+    // The password of your key
+    keyPass = "123456"
+
+    // Your key alias
+    keyStoreAlias = "testalias"
+
+    // Your keystore password
+    keyStorePass = "123456"
+
+    // Your keystore location
+    keyStore = "/home/hypherionsa/dummystore.jks"
+}
+
+// Example of signing another jar
+tasks.register('signDummyJar', SignJarTask) {
+    dependsOn createDummyJar
+    artifactInput = createDummyJar
+
+    keyPass = "123456"
+    keyStoreAlias = "testalias"
+    keyStorePass = "123456"
+    keyStore = "/home/hypherionsa/dummystore.jks"
+}
