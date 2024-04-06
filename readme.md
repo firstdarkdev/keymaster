@@ -6,12 +6,19 @@ A Simple Gradle plugin to help you sign your jars.
 
 ### Getting Started
 
-To get started, you will need keystore. If you already have this, you can skip this part.
+To get started, you will a GPG key. If you already have this, you can skip it.
 
-In a terminal, or in command line, run the following command:
+In a terminal, or in command line, run the following commands:
 
 ```bash
-keytool -genkey -alias YOUR_ALIAS_HERE -keyalg RSA -keysize 2048 -keystore keystore.jks
+# generate the keys
+gpg --gen-key
+
+#export the private key with the specified id to a file
+gpg --output {private key file name and path} --armor --export-secret-keys {key-id}
+
+#export the public key with the specified id to a file
+gpg --output {public key file name and path} --armor --export {key-id}
 ```
 
 Answer the required questions, and your file will be generated once completed.
@@ -53,39 +60,35 @@ Finally, add the following to `build.gradle` file:
 ```groovy
 import dev.firstdark.keymaster.tasks.SignJarTask
 
+// This is optional. These values can be configured on the task
+keymaster {
+    // GPG Password
+    gpgPassword = "123456"
+    // GPG Key file, or String.
+    gpgKey = System.getenv("GPG_KEY")
+    // Generate a .sig file for signed jars, to be used for verification
+    generateSignature = true
+}
+
 // Register a custom task to sign your jar
 tasks.register('signJar', SignJarTask) {
     // Depend on the task used to build your project
     dependsOn jar
-    
+
     // The input artifact. This can be a Task, File or File Name
     artifactInput = jar
-    
+
     // Optional. Set the output name of the signed jar. This defaults to the artifactInput file name, and will overwrite it
     outputFileName = "testsign"
 
-    // The password of your key
-    keyPass = "123456"
-    
-    // Your key alias
-    keyStoreAlias = "testalias"
-    
-    // Your keystore password
-    keyStorePass = "123456"
-    
-    // Your keystore location
-    keyStore = "/home/hypherionsa/dummystore.jks"
-}
+    // GPG Private key file or string. Not required when the extension is used
+    gpgKey = System.getenv("GPG_KEY")
 
-// Example of signing another jar
-tasks.register('signDummyJar', SignJarTask) {
-    dependsOn createDummyJar
-    artifactInput = createDummyJar
+    // GPG Private Key password. Not required when extension is used
+    gpgPassword = "123456"
 
-    keyPass = "123456"
-    keyStoreAlias = "testalias"
-    keyStorePass = "123456"
-    keyStore = "/home/hypherionsa/dummystore.jks"
+    // Should the task generate a .sig file. Defaults to true, and not required when extension is used
+    generateSignature = false
 }
 ```
 
@@ -126,8 +129,18 @@ Finally, add the following to `build.gradle.kts` file:
 import dev.firstdark.keymaster.tasks.SignJarTask
 import org.gradle.kotlin.dsl.register
 
+// This is optional. These values can be configured on the task
+extensions.configure<KeymasterExtension>("keymaster") {
+    // GPG Password
+    gpgPassword = "123456"
+    // GPG Key file, or String.
+    gpgKey = System.getenv("GPG_KEY")
+    // Generate a .sig file for signed jars, to be used for verification
+    generateSignature = true
+}
+
 // Register a custom task to sign your jar
-val signJar by tasks.register<SignJarTask>("signJar") {
+tasks.register("signJar", SignJarTask::class) {
     // Depend on the task used to build your project
     dependsOn(tasks.jar)
 
@@ -137,28 +150,14 @@ val signJar by tasks.register<SignJarTask>("signJar") {
     // Optional. Set the output name of the signed jar. This defaults to the artifactInput file name, and will overwrite it
     outputFileName = "testsign"
 
-    // The password of your key
-    keyPass = "123456"
+    // GPG Private key file or string. Not required when the extension is used
+    gpgKey = System.getenv("GPG_KEY")
 
-    // Your key alias
-    keyStoreAlias = "testalias"
+    // GPG Private Key password. Not required when extension is used
+    gpgPassword = "123456"
 
-    // Your keystore password
-    keyStorePass = "123456"
-
-    // Your keystore location
-    keyStore = "/home/hypherionsa/dummystore.jks"
-}
-
-// Example of signing another jar
-val signDummyJar by tasks.register<SignJarTask>("signDummyJar") {
-    dependsOn(tasks.createDummyJar)
-    artifactInput = tasks.createDummyJar
-
-    keyPass = "123456"
-    keyStoreAlias = "testalias"
-    keyStorePass = "123456"
-    keyStore = "/home/hypherionsa/dummystore.jks"
+    // Should the task generate a .sig file. Defaults to true, and not required when extension is used
+    generateSignature = false
 }
 ```
 

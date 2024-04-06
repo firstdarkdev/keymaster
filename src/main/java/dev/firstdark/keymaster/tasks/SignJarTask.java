@@ -1,21 +1,33 @@
+/*
+ * This file is part of KeyMaster, licensed under the MIT License (MIT).
+ *
+ * Copyright (c) 2024 HypherionSA and Contributors
+ *
+ */
 package dev.firstdark.keymaster.tasks;
 
+import dev.firstdark.keymaster.plugin.KeyMasterGradleExtension;
+import dev.firstdark.keymaster.utils.PluginUtils;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
-import org.gradle.api.Project;
-import org.gradle.api.provider.Provider;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openpgp.*;
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentSignerBuilder;
+import org.bouncycastle.openpgp.operator.jcajce.JcePBESecretKeyDecryptorBuilder;
+import org.gradle.api.GradleException;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.api.tasks.bundling.AbstractArchiveTask;
 import org.gradle.jvm.tasks.Jar;
+import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.util.HashMap;
-import java.util.Map;
+import java.security.Security;
+
+import static dev.firstdark.keymaster.utils.PluginUtils.isNullOrBlank;
+import static dev.firstdark.keymaster.utils.PluginUtils.resolveFile;
 
 /**
  * @author HypherionSA
@@ -31,13 +43,19 @@ public class SignJarTask extends Jar {
     private String outputFileName = "signed.jar";
 
     // KeyStore values
-    private String keyStorePass;
-    private String keyStore;
-    private String keyStoreAlias;
-    private String keyPass;
+    private String gpgKey;
+    private String gpgPassword;
+    private Boolean generateSignature = true;
 
     // Set the output directory. Defaults to build/libs
     private String outputDirectory = getProject().getBuildDir() + "/libs";
+
+    @Nullable
+    private final KeyMasterGradleExtension extension;
+
+    public SignJarTask() {
+        extension = getProject().getExtensions().findByType(KeyMasterGradleExtension.class);
+    }
 
     @Input
     public Object getArtifactInput() {
@@ -50,33 +68,53 @@ public class SignJarTask extends Jar {
     }
 
     @Input
-    public String getKeyStorePass() {
-        return this.keyStorePass;
+    @Optional
+    @Nullable
+    public String getGpgKey() {
+        if (!isNullOrBlank(gpgKey))
+            return gpgKey;
+
+        if (extension != null && !isNullOrBlank(extension.getGpgKey().getOrNull()))
+            return extension.getGpgKey().get();
+
+        return null;
     }
 
     @Input
-    public String getKeyStore() {
-        return this.keyStore;
-    }
+    @Optional
+    @Nullable
+    public String getGpgPassword() {
+        if (!isNullOrBlank(gpgPassword))
+            return gpgPassword;
 
-    @Input
-    public String getKeyStoreAlias() {
-        return this.keyStoreAlias;
-    }
+        if (extension != null && !isNullOrBlank(extension.getGpgPassword().getOrNull()))
+            return extension.getGpgPassword().get();
 
-    @Input
-    public String getKeyPass() {
-        return this.keyPass;
+        return null;
     }
 
     @Input
     public String getOutputDirectory() {
-        return this.outputDirectory;
+        if (!isNullOrBlank(outputDirectory))
+            return outputDirectory;
+
+        if (extension != null && !isNullOrBlank(extension.getOutputDirectory().getOrNull()))
+            return extension.getOutputDirectory().get();
+
+        return outputDirectory;
     }
 
     @OutputFile
     public File getOutputFile() {
         return new File(outputDirectory, outputFileName);
+    }
+
+    @Input
+    public Boolean getGenerateSignature() {
+        if (extension != null && extension.getGenerateSignature().isPresent())
+            return extension.getGenerateSignature().get();
+
+        return generateSignature;
     }
 
     /**
@@ -86,14 +124,14 @@ public class SignJarTask extends Jar {
     @TaskAction
     public void doTask() {
         // Check that input is supplied
-        if (artifactInput == null) {
+        if (getArtifactInput() == null) {
             getProject().getLogger().error("Input cannot be null!");
             return;
         }
 
         // Check that all the required values are supplied
-        if (isNullOrBlank(keyPass) || isNullOrBlank(keyStore) || isNullOrBlank(keyStoreAlias) || isNullOrBlank(keyStorePass)) {
-            getLogger().error("Please provide all required parameters: keyStore, keyStoreAlias, keyStorePass, keyPass");
+        if (isNullOrBlank(getGpgKey()) || isNullOrBlank(getGpgPassword())) {
+            getLogger().error("Please provide all required parameters: keyStore, keyPass");
             return;
         }
 
@@ -101,10 +139,11 @@ public class SignJarTask extends Jar {
         File tempDir = new File(getProject().getBuildDir(), "signing");
         tempDir.mkdirs();
 
+        // Try to sign the jar
         try {
-            processArtifact(artifactInput, tempDir);
+            processArtifact(getArtifactInput(), tempDir);
         } catch (Exception e) {
-            getLogger().error("Failed to sign artifact {}", artifactInput, e);
+            getLogger().error("Failed to sign artifact {}", getArtifactInput(), e);
         }
 
         // Remove the temp working dir
@@ -118,36 +157,35 @@ public class SignJarTask extends Jar {
      * @throws IOException This is mostly thrown when a file copy error occurs
      */
     @SuppressWarnings("ResultOfMethodCallIgnored")
-    private void processArtifact(Object input, File tempDir) throws IOException {
+    private void processArtifact(Object input, File tempDir) throws IOException, PGPException {
         // Set up the input file
         File inputFile = resolveFile(getProject(), input);
 
         // Check if the output file is specified. If not, default to the input file
-        outputFileName = outputFileName.equalsIgnoreCase("signed.jar") ? inputFile.getName() : outputFileName + ".jar";
+        outputFileName = getOutputFileName().equalsIgnoreCase("signed.jar") ? inputFile.getName() : getOutputFileName() + ".jar";
 
         // Copy the original input file to the temporary processing folder
         File tempInput = new File(tempDir, inputFile.getName());
         Files.copy(inputFile.toPath(), tempInput.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
         // Create a temporary output jar
-        File tempOutput = new File(tempDir, outputFileName);
+        File tempOutput = new File(tempDir, getOutputFileName());
+        File sigTempFile = new File(tempDir, tempOutput.getName() + ".sig");
+        File outputSigFile = new File(getOutputFile().getParentFile(), getOutputFile().getName() + ".sig");
 
-        // Configure the jar signing
-        Map<String, Object> map = new HashMap<>();
-        map.put("alias", keyStoreAlias);
-        map.put("storePass", keyStorePass);
-        map.put("jar", tempInput.getAbsolutePath());
-        map.put("signedJar", tempOutput.getAbsolutePath());
-        map.put("keypass", keyPass);
-        map.put("keyStore", resolveFile(getProject(), keyStore).getAbsolutePath());
-
-        // SIGN IT
-        getProject().getAnt().invokeMethod("signjar", map);
+        // Sign the damn thing
+        signGPG(tempInput, sigTempFile, tempOutput);
 
         // Copy the signed jar to the libs folder
         Files.copy(tempOutput.toPath(), getOutputFile().toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-        getProject().getLogger().lifecycle("Signed " + getOutputFile().getName() + " successfully");
+        // Copy Signature File
+        if (getGenerateSignature()) {
+            Files.copy(sigTempFile.toPath(), outputSigFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            sigTempFile.delete();
+        }
+
+        getProject().getLogger().lifecycle("Signed {} successfully", getOutputFile().getName());
 
         // Cleanup the temporary files
         tempOutput.delete();
@@ -155,45 +193,58 @@ public class SignJarTask extends Jar {
     }
 
     /**
-     * Helper method to check if a supplied string is null or empty
-     * @param s The string to test
-     * @return True if null or empty
+     * Main Signing logic. This handles reading the GPG keys, and doing the actual signing
+     * @param inputFile The jar to be signed
+     * @param signatureFile The GPG private key file or string
+     * @param signedOutputFile The output, signed jar file
+     * @throws IOException Thrown when a file error occurs
+     * @throws PGPException Thrown when a signature error occurs
      */
-    private boolean isNullOrBlank(String s) {
-        if (s == null)
-            return true;
+    private void signGPG(File inputFile, File signatureFile, File signedOutputFile) throws IOException, PGPException {
+        // Load Bouncy Castle
+        BouncyCastleProvider provider = new BouncyCastleProvider();
+        Security.addProvider(provider);
 
-        return StringUtils.isBlank(s);
-    }
-
-    /**
-     * Resolve an Object to a File
-     * @param project The project the file potentially belongs to
-     * @param obj The object to process
-     * @return A File object, ready to use
-     */
-    private File resolveFile(Project project, Object obj) {
-        if (obj == null) {
-            throw new NullPointerException("Null Path");
+        // Load the GPG private key
+        byte[] keyBytes = PluginUtils.resolvePrivateKey(getGpgKey());
+        if (keyBytes == null) {
+            throw new GradleException("Could not read GPG private key. Signing will fail");
         }
 
-        if (obj instanceof Provider) {
-            Provider<?> p = (Provider<?>) obj;
-            obj = p.get();
-        }
+        // Process the private key
+        try (ByteArrayInputStream keyInputStream = new ByteArrayInputStream(keyBytes);
+             FileOutputStream sigOutputStream = new FileOutputStream(signatureFile);
+             FileOutputStream signedOutputStream = new FileOutputStream(signedOutputFile)) {
 
-        if (obj instanceof File) {
-            return (File) obj;
-        }
+            PGPSecretKey secretKey = PluginUtils.readSecretKey(keyInputStream);
+            PGPPrivateKey privateKey = secretKey.extractPrivateKey(new JcePBESecretKeyDecryptorBuilder().setProvider(provider).build(getGpgPassword().toCharArray()));
 
-        if (obj instanceof AbstractArchiveTask) {
-            return ((AbstractArchiveTask)obj).getArchiveFile().get().getAsFile();
-        }
+            PGPSignatureGenerator signature = new PGPSignatureGenerator(
+                    new JcaPGPContentSignerBuilder(secretKey.getPublicKey().getAlgorithm(), PGPUtil.SHA1)
+                            .setProvider(provider));
+            signature.init(PGPSignature.BINARY_DOCUMENT, privateKey);
 
-        if (obj instanceof String) {
-            return new File(obj.toString());
-        }
+            // Write signature to output .sig file
+            if (getGenerateSignature()) {
+                try (FileInputStream inputStream = new FileInputStream(inputFile)) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        signature.update(buffer, 0, bytesRead);
+                    }
 
-        return project.file(obj);
+                    signature.generate().encode(sigOutputStream);
+                }
+            }
+
+            // Copy the signed content to the output signed jar file
+            try (FileInputStream inputStream = new FileInputStream(inputFile)) {
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    signedOutputStream.write(buffer, 0, bytesRead);
+                }
+            }
+        }
     }
 }

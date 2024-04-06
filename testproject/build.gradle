@@ -16,6 +16,16 @@ dependencies {
 
 }
 
+// This is optional. These values can be configured on the task
+keymaster {
+    // GPG Password
+    gpgPassword = "123456"
+    // GPG Key file, or String.
+    gpgKey = System.getenv("GPG_KEY")
+    // Generate a .sig file for signed jars, to be used for verification
+    generateSignature = true
+}
+
 tasks.register('createDummyJar', Jar) {
     // Configure the JAR task to have no files
     from {}
@@ -33,26 +43,12 @@ tasks.register('signJar', SignJarTask) {
     // Optional. Set the output name of the signed jar. This defaults to the artifactInput file name, and will overwrite it
     outputFileName = "testsign"
 
-    // The password of your key
-    keyPass = "123456"
+    // GPG Private key file or string. Not required when the extension is used
+    gpgKey = System.getenv("GPG_KEY")
 
-    // Your key alias
-    keyStoreAlias = "testalias"
+    // GPG Private Key password. Not required when extension is used
+    gpgPassword = "123456"
 
-    // Your keystore password
-    keyStorePass = "123456"
-
-    // Your keystore location
-    keyStore = "/home/hypherionsa/dummystore.jks"
-}
-
-// Example of signing another jar
-tasks.register('signDummyJar', SignJarTask) {
-    dependsOn createDummyJar
-    artifactInput = createDummyJar
-
-    keyPass = "123456"
-    keyStoreAlias = "testalias"
-    keyStorePass = "123456"
-    keyStore = "/home/hypherionsa/dummystore.jks"
+    // Should the task generate a .sig file. Defaults to true, and not required when extension is used
+    generateSignature = false
 }

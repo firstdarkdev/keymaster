@@ -32,6 +32,10 @@ dependencies {
     implementation gradleApi()
 
     shadeMe "org.apache.commons:commons-lang3:${commons_lang}"
+    shadeMe "org.bouncycastle:bcprov-jdk18on:${bouncy}"
+    shadeMe "org.bouncycastle:bcpg-jdk18on:${bouncy}"
+    shadeMe "commons-io:commons-io:${commons_io}"
+    shadeMe "commons-codec:commons-codec:${commons_codec}"
 
     compileOnly "org.projectlombok:lombok:${lombok}"
     annotationProcessor "org.projectlombok:lombok:${lombok}"
